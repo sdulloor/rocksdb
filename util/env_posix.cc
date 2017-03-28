@@ -147,6 +147,11 @@ class PosixEnv : public Env {
     }
   }
 
+  void set_affinity(unsigned long lo, unsigned long hi) {
+ 	core_lo_ = lo;
+	core_hi_ = hi;
+  }
+
   virtual Status NewSequentialFile(const std::string& fname,
                                    unique_ptr<SequentialFile>* result,
                                    const EnvOptions& options) override {
@@ -820,6 +825,7 @@ class PosixEnv : public Env {
   }
 
   size_t page_size_;
+  unsigned long core_lo_, core_hi_;
 
   std::vector<ThreadPoolImpl> thread_pools_;
   pthread_mutex_t mu_;
@@ -869,22 +875,21 @@ static void* StartThreadWrapper(void* arg) {
 }
 
 static cpu_set_t rocksdb_cpuset(int core_lo, int core_hi) {
-	cpu_set_t cpuset;
-	CPU_ZERO(&cpuset);
-	for (int c = core_lo; c < core_hi; c++)
-		CPU_SET(c, &cpuset);
-	return cpuset;
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  for (int c = core_lo; c < core_hi; c++)
+    CPU_SET(c, &cpuset);
+  return cpuset;
 }
 
-  static unsigned long get_cpuset(cpu_set_t *set)
-  {
-    unsigned long number = 0;
-    for (int j = 0; j < CPU_SETSIZE; j++)
-      if (CPU_ISSET(j, set))
-	number = number | (1UL << j);
-
-    return number;
-  }
+static unsigned long get_cpuset(cpu_set_t *set)
+{
+  unsigned long number = 0;
+  for (int j = 0; j < CPU_SETSIZE; j++)
+    if (CPU_ISSET(j, set))
+  number = number | (1UL << j);
+  return number;
+}
 
 void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;
@@ -894,10 +899,8 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   ThreadPoolImpl::PthreadCall(
       "start thread", pthread_create(&t, nullptr, &StartThreadWrapper, state));
   // TODO: Hard-coded for now. Fix it later.
-  cpu_set_t set = rocksdb_cpuset(26, 47);
-  fprintf(stderr, 
-	  "cpuset ====== %lx\n", 
-	  get_cpuset(&set));  
+  cpu_set_t set = rocksdb_cpuset(core_lo_, core_hi_);
+  fprintf(stdout, "cpuset ====== %lx\n", get_cpuset(&set));  
   ThreadPoolImpl::PthreadCall("affinitize",
 	  pthread_setaffinity_np(t, sizeof(cpu_set_t), &set));
   ThreadPoolImpl::PthreadCall("lock", pthread_mutex_lock(&mu_));
