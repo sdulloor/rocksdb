@@ -868,6 +868,14 @@ static void* StartThreadWrapper(void* arg) {
   return nullptr;
 }
 
+static cpu_set_t* rocksdb_cpuset(int core_lo, int core_hi) {
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	for (int c = core_lo; c < core_hi; c++
+		CPU_SET(c, &cpuset);
+	return cpuset;
+}
+
 void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;
   StartThreadState* state = new StartThreadState;
@@ -875,6 +883,9 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   state->arg = arg;
   ThreadPoolImpl::PthreadCall(
       "start thread", pthread_create(&t, nullptr, &StartThreadWrapper, state));
+  // TODO: Hard-coded for now. Fix it later.
+  ThreadPoolImpl::PthreadCall("affinitize",
+	  pthread_setaffinity_np(t, sizeof(cpu_set_t), &rocksdb_cpuset(26, 47)));
   ThreadPoolImpl::PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   ThreadPoolImpl::PthreadCall("unlock", pthread_mutex_unlock(&mu_));
