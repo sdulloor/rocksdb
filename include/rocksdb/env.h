@@ -390,6 +390,10 @@ class Env {
   // Returns the ID of the current thread.
   virtual uint64_t GetThreadID() const;
 
+  // set thread affinity
+  virtual void set_affinity(unsigned long lo, unsigned long hi) {
+  }
+
  protected:
   // The pointer to an internal structure that will update the
   // status of each thread.

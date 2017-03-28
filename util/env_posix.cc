@@ -147,7 +147,8 @@ class PosixEnv : public Env {
     }
   }
 
-  void set_affinity(unsigned long lo, unsigned long hi) {
+  // set thread affinity
+  virtual void set_affinity(unsigned long lo, unsigned long hi) override {
  	core_lo_ = lo;
 	core_hi_ = hi;
   }

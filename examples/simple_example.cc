@@ -9,6 +9,9 @@
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/options.h"
+#include "rocksdb/utilities/backupable_db.h"
+
+#include <vector>
 
 using namespace rocksdb;
 
@@ -22,6 +25,7 @@ int main() {
   options.OptimizeLevelStyleCompaction();
   // create the DB if it's not already present
   options.create_if_missing = true;
+  options.env->set_affinity(16, 31);
 
   // open DB
   Status s = DB::Open(options, kDBPath, &db);
@@ -50,7 +54,19 @@ int main() {
   db->Get(ReadOptions(), "key2", &value);
   assert(value == "value");
 
+  // Backup
+  BackupEngine* backup_engine;
+  s = BackupEngine::Open(Env::Default(), BackupableDBOptions("/tmp/rocksdb_backup"), &backup_engine);
+  assert(s.ok());
+  s = backup_engine->CreateNewBackup(db);
+  assert(s.ok());
+  std::vector<BackupInfo> backup_info;
+  backup_engine->GetBackupInfo(&backup_info);
+  s = backup_engine->VerifyBackup(1);
+  assert(s.ok());
+
   delete db;
+  delete backup_engine;
 
   return 0;
 }
