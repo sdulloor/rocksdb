@@ -17,7 +17,9 @@
 #endif
 
 #ifdef OS_LINUX
-#  include <sys/syscall.h>
+#include <sys/syscall.h>
+#include <sched.h>
+#include <pthread.h>
 #endif
 
 #include <algorithm>
@@ -29,6 +31,10 @@
 #include <vector>
 
 namespace rocksdb {
+
+#if OS_LINUX
+unsigned long rocksdb_core_lo, rocksdb_core_hi;
+#endif
 
 void ThreadPoolImpl::PthreadCall(const char* label, int result) {
   if (result != 0) {
@@ -167,9 +173,34 @@ void ThreadPoolImpl::Impl::LowerIOPriority() {
   low_io_priority_ = true;
 }
 
+#ifdef OS_LINUX
+static cpu_set_t rocksdb_cpuset(int core_lo, int core_hi) {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  for (int c = core_lo; c < core_hi; c++)
+    CPU_SET(c, &cpuset);
+  return cpuset;
+}
+
+static unsigned long get_cpuset(cpu_set_t *set)
+{
+  unsigned long number = 0;
+  for (int j = 0; j < CPU_SETSIZE; j++)
+    if (CPU_ISSET(j, set))
+  number = number | (1UL << j);
+  return number;
+}
+#endif
 
 void ThreadPoolImpl::Impl::BGThread(size_t thread_id) {
   bool low_io_priority = false;
+#ifdef OS_LINUX
+  // TODO: Hard-coded for now. Fix it later.
+  cpu_set_t set = rocksdb_cpuset(rocksdb_core_lo, rocksdb_core_hi);
+  fprintf(stderr, "cpuset ====== %lx\n", get_cpuset(&set));
+  PthreadCall("affinitize", sched_setaffinity(0, sizeof(cpu_set_t), &set));
+#endif
+
   while (true) {
 // Wait until there is an item that is ready to run
     std::unique_lock<std::mutex> lock(mu_);

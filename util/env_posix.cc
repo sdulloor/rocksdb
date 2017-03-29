@@ -67,6 +67,10 @@
 
 namespace rocksdb {
 
+#if OS_LINUX
+extern unsigned long rocksdb_core_lo, rocksdb_core_hi;
+#endif
+
 namespace {
 
 ThreadStatusUpdater* CreateThreadStatusUpdater() {
@@ -149,8 +153,8 @@ class PosixEnv : public Env {
 
   // set thread affinity
   virtual void set_affinity(unsigned long lo, unsigned long hi) override {
- 	core_lo_ = lo;
-	core_hi_ = hi;
+    rocksdb::rocksdb_core_lo = lo;
+	rocksdb::rocksdb_core_hi = hi;
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
@@ -826,7 +830,7 @@ class PosixEnv : public Env {
   }
 
   size_t page_size_;
-  unsigned long core_lo_, core_hi_;
+  //unsigned long core_lo_, core_hi_;
 
   std::vector<ThreadPoolImpl> thread_pools_;
   pthread_mutex_t mu_;
@@ -875,23 +879,6 @@ static void* StartThreadWrapper(void* arg) {
   return nullptr;
 }
 
-static cpu_set_t rocksdb_cpuset(int core_lo, int core_hi) {
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  for (int c = core_lo; c < core_hi; c++)
-    CPU_SET(c, &cpuset);
-  return cpuset;
-}
-
-static unsigned long get_cpuset(cpu_set_t *set)
-{
-  unsigned long number = 0;
-  for (int j = 0; j < CPU_SETSIZE; j++)
-    if (CPU_ISSET(j, set))
-  number = number | (1UL << j);
-  return number;
-}
-
 void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   pthread_t t;
   StartThreadState* state = new StartThreadState;
@@ -899,11 +886,6 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   state->arg = arg;
   ThreadPoolImpl::PthreadCall(
       "start thread", pthread_create(&t, nullptr, &StartThreadWrapper, state));
-  // TODO: Hard-coded for now. Fix it later.
-  cpu_set_t set = rocksdb_cpuset(core_lo_, core_hi_);
-  fprintf(stdout, "cpuset ====== %lx\n", get_cpuset(&set));  
-  ThreadPoolImpl::PthreadCall("affinitize",
-	  pthread_setaffinity_np(t, sizeof(cpu_set_t), &set));
   ThreadPoolImpl::PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
   ThreadPoolImpl::PthreadCall("unlock", pthread_mutex_unlock(&mu_));

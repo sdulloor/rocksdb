@@ -20,12 +20,30 @@ std::string kDBPath = "/tmp/rocksdb_simple_example";
 int main() {
   DB* db;
   Options options;
+
+  // set the affinity of background threads
+  options.env->set_affinity(16, 32);
+
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
   options.IncreaseParallelism();
   options.OptimizeLevelStyleCompaction();
   // create the DB if it's not already present
   options.create_if_missing = true;
-  options.env->set_affinity(16, 31);
+
+  // create background threads
+#if 1
+  int num_threads = 16;
+  options.PrepareForBulkLoad();
+  options.write_buffer_size = 1024 * 1024 * 256;
+  options.target_file_size_base = 1024 * 1024 * 512;
+  options.IncreaseParallelism(num_threads);
+  options.max_background_compactions = num_threads;
+  options.max_background_flushes = num_threads;
+  options.max_write_buffer_number = num_threads;
+  //options.min_write_buffer_number_to_merge = max(num_threads/2, 1);
+  //options.compaction_style = rocksdb::kCompactionStyleNone;
+  //options.memtable_factory.reset(new rocksdb::VectorRepFactory(1000));
+#endif
 
   // open DB
   Status s = DB::Open(options, kDBPath, &db);
